@@ -680,10 +680,11 @@ const TEAMS = {
   chiefs:   { headline:"Up to 40% off TVs built for Chiefs football", subhead:"Ready for kickoff? So is your new TV" },
 };
 $("team").addEventListener("change", ()=>{
-  const t=TEAMS[$("team").value]; if(!t) return;
+  const key=$("team").value; const t=TEAMS[key]; if(!t) return;
   $("headline").value=t.headline; $("subhead").value=t.subhead;
-  readInputs();     // headline/subhead -> pending + counts
-  applyPending();   // load & apply this team's copy immediately
+  readInputs();          // headline/subhead -> pending + counts
+  applyPending();        // load & apply this team's copy immediately
+  applyTeamImages(key);  // swap this team's AEM background + product image
 });
 
 /* ---------- pull copy from AEM (GraphQL) ---------- */
@@ -702,8 +703,9 @@ const AEM = {
 function aemQuery(){
   const p = AEM.fragmentPath;
   let q = `query{ master: bestBuyNflBannerByPath(_path:"${p}"){ item{ headline subheadline legalText ctaLabel backgroundImage{ ... on ImageRef{ _dynamicUrl } } productImage{ ... on ImageRef{ _dynamicUrl } } } }`;
+  const imgSel = `backgroundImage{ ... on ImageRef{ _dynamicUrl } } productImage{ ... on ImageRef{ _dynamicUrl } }`;
   for(const alias in AEM.variations){
-    q += ` ${alias}: bestBuyNflBannerByPath(_path:"${p}", variation:"${AEM.variations[alias].slug}"){ item{ headline subheadline } }`;
+    q += ` ${alias}: bestBuyNflBannerByPath(_path:"${p}", variation:"${AEM.variations[alias].slug}"){ item{ headline subheadline ${imgSel} } }`;
   }
   return q + " }";
 }
@@ -718,6 +720,20 @@ function swapAemImage(presetId, url){
     if(state.bgId===presetId || state.fgId===presetId) renderAll(); };
   im.onerror = ()=>{ /* CORS/format issue -> keep the embedded image as fallback */ };
   im.src = url;
+}
+function baseImgUrl(ref, isTv, ck){
+  if(!ref || !ref._dynamicUrl) return null;
+  let origin; try{ origin = new URL($("aemEndpoint").value.trim()).origin; }catch(e){ return null; }
+  let du = ref._dynamicUrl;
+  if(isTv) du = du.replace(/\.jpe?g($|\?)/i, ".png$1");        // .png keeps TV transparency
+  let url = origin + du;
+  if(!isTv) url += (url.indexOf('?')>=0?'&':'?') + "width=1600";
+  return url + (url.indexOf('?')>=0?'&':'?') + "ck=" + ck;
+}
+function applyTeamImages(key){
+  const t = TEAMS[key]; if(!t) return;
+  if(t.bgUrl) swapAemImage("nfl", t.bgUrl);   // background for this team (inherited or overridden)
+  if(t.tvUrl) swapAemImage("tv",  t.tvUrl);   // product image for this team
 }
 async function loadFromAEM(){
   const ep = $("aemEndpoint").value.trim();
@@ -737,26 +753,27 @@ async function loadFromAEM(){
     let n=0;
     for(const alias in AEM.variations){
       const it = d[alias] && d[alias].item;
-      if(it && it.headline){ TEAMS[AEM.variations[alias].key] = { headline: it.headline, subhead: it.subheadline || "" }; n++; }
+      if(it && it.headline){
+        TEAMS[AEM.variations[alias].key] = {
+          headline: it.headline,
+          subhead:  it.subheadline || "",
+          bgUrl:    baseImgUrl(it.backgroundImage, false, ck),
+          tvUrl:    baseImgUrl(it.productImage,    true,  ck)
+        };
+        n++;
+      }
     }
     const m = d.master && d.master.item;
     if(m){
       if(m.legalText){ DEFAULTS.legal=m.legalText; $("legal").value=m.legalText; }
       if(m.ctaLabel){  DEFAULTS.cta=m.ctaLabel;   $("cta").value=m.ctaLabel; }
     }
-    // swap in AEM Dynamic Media images (keeps the embedded images as fallback if these fail to load)
-    try{
-      const origin = new URL(ep).origin;
-      const bgDu = m && m.backgroundImage && m.backgroundImage._dynamicUrl;
-      const tvDu = m && m.productImage && m.productImage._dynamicUrl;
-      if(bgDu) swapAemImage("nfl", origin + bgDu + (bgDu.indexOf('?')>=0?'&':'?') + "width=1600&ck=" + ck);
-      const tvUrl = tvDu ? origin + tvDu.replace(/\.jpe?g($|\?)/i, ".png$1") : null;   // .png keeps TV transparency
-      if(tvUrl) swapAemImage("tv", tvUrl + (tvUrl.indexOf('?')>=0?'&':'?') + "ck=" + ck);
-    }catch(e){}
-    // re-apply the currently selected team with the freshly loaded copy
-    const t = TEAMS[$("team").value];
+    // re-apply the currently selected team: copy + its AEM background/product images
+    const curKey = $("team").value;
+    const t = TEAMS[curKey];
     if(t){ $("headline").value=t.headline; $("subhead").value=t.subhead; }
     readInputs(); applyPending();
+    applyTeamImages(curKey);
     setAemStatus("AEM ✓ ("+n+" teams)","ok");
   }catch(e){
     setAemStatus("built-in (AEM: "+String(e.message||e).slice(0,42)+")","err");
