@@ -725,10 +725,11 @@ async function loadFromAEM(){
   setAemStatus("loading…");
   try{
     const isPersisted = /\/graphql\/execute\.json\//.test(ep);
+    const ck = Date.now();   // cache-buster: bypass the CDN so content edits show immediately (drop for prod caching)
     const res = isPersisted
-      ? await fetch(ep, { method:"GET" })
+      ? await fetch(ep + (ep.indexOf('?')>=0?'&':'?') + "ck=" + ck, { method:"GET", cache:"no-store" })
       : await fetch(ep, { method:"POST", headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify({ query: aemQuery() }) });
+          body: JSON.stringify({ query: aemQuery() }), cache:"no-store" });
     if(!res.ok) throw new Error("HTTP "+res.status);
     const json = await res.json();
     if(json.errors && json.errors.length) throw new Error(json.errors[0].message || "GraphQL error");
@@ -748,8 +749,9 @@ async function loadFromAEM(){
       const origin = new URL(ep).origin;
       const bgDu = m && m.backgroundImage && m.backgroundImage._dynamicUrl;
       const tvDu = m && m.productImage && m.productImage._dynamicUrl;
-      if(bgDu) swapAemImage("nfl", origin + bgDu + (bgDu.indexOf('?')>=0?'&':'?') + "width=1600");
-      if(tvDu) swapAemImage("tv",  origin + tvDu.replace(/\.jpe?g($|\?)/i, ".png$1"));  // .png keeps TV transparency
+      if(bgDu) swapAemImage("nfl", origin + bgDu + (bgDu.indexOf('?')>=0?'&':'?') + "width=1600&ck=" + ck);
+      const tvUrl = tvDu ? origin + tvDu.replace(/\.jpe?g($|\?)/i, ".png$1") : null;   // .png keeps TV transparency
+      if(tvUrl) swapAemImage("tv", tvUrl + (tvUrl.indexOf('?')>=0?'&':'?') + "ck=" + ck);
     }catch(e){}
     // re-apply the currently selected team with the freshly loaded copy
     const t = TEAMS[$("team").value];
