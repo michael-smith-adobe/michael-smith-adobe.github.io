@@ -76,6 +76,8 @@
   .swatch{width:34px;height:34px;border-radius:8px;border:2px solid var(--line);
     cursor:pointer;position:relative}
   .swatch.sel{border-color:var(--ink);box-shadow:0 0 0 2px #fff inset}
+  .locked{opacity:.5;pointer-events:none}
+  input:disabled, select:disabled, .btn:disabled{opacity:.5;cursor:not-allowed}
 
   .thumb-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:9px}
   .thumb{width:66px;height:40px;border-radius:6px;border:2px solid var(--line);
@@ -186,6 +188,14 @@
           value="https://publish-p168906-e1803360.adobeaemcloud.com/graphql/execute.json/mikesmithprogram/best-buy-nfl-variations" />
         <button class="btn btn-ghost btn-sm" id="aemLoad" style="margin-top:8px">Load copy from AEM GraphQL</button>
         <div class="hint">Prod: publish <b>execute.json</b> persisted query (GET). Dev: author <b>endpoint.json</b> (ad‑hoc POST). Falls back to built‑in copy if unreachable.</div>
+      </div>
+
+      <div class="field" style="margin-bottom:6px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600">
+          <input type="checkbox" id="override" style="width:auto;margin:0" />
+          Manual override
+        </label>
+        <div class="hint">Off = use the values pulled from AEM per team. On = edit the copy, images &amp; color below.</div>
       </div>
 
       <div class="field">
@@ -687,6 +697,25 @@ $("team").addEventListener("change", ()=>{
   applyTeamImages(key);  // swap this team's AEM background + product image
 });
 
+/* ---------- manual override (off = AEM-driven) ---------- */
+const MANUAL_INPUTS = ["headline","subhead","cta","legal","btnUpdate","btnReset",
+  "btnBgUpload","bgUrl","btnBgAddUrl","btnFgUpload","fgUrl","btnFgAddUrl"];
+function setControlsDisabled(){
+  const manual = $("override").checked;
+  MANUAL_INPUTS.forEach(id=>{ const el=$(id); if(el) el.disabled = !manual; });
+  ["swatches","bgThumbs","fgThumbs"].forEach(id=>{ const el=$(id); if(el) el.classList.toggle("locked", !manual); });
+}
+$("override").addEventListener("change", ()=>{
+  setControlsDisabled();
+  if(!$("override").checked){                    // back to AEM-driven: re-apply the current team's AEM values
+    const key=$("team").value, t=TEAMS[key];
+    if(t){ $("headline").value=t.headline; $("subhead").value=t.subhead; }
+    if(DEFAULTS.legal) $("legal").value=DEFAULTS.legal;
+    if(DEFAULTS.cta)   $("cta").value=DEFAULTS.cta;
+    readInputs(); applyPending(); applyTeamImages(key);
+  }
+});
+
 /* ---------- pull copy from AEM (GraphQL) ---------- */
 const AEM = {
   fragmentPath: "/content/dam/best-buy-eds/best-buy-nfl-tv-offer",
@@ -922,6 +951,7 @@ buildCards(); renderBgThumbs(); renderFgThumbs(); syncCounts();
 backgrounds.filter(b=>b.type==="image").forEach(loadImage);
 foregrounds.filter(f=>f.type==="image").forEach(loadImage);   // preload TV cutout
 renderAll();
+setControlsDisabled();   // default: manual override off -> controls locked, AEM-driven
 loadFromAEM();   // best-effort: pull live copy from AEM GraphQL; falls back to built-in
 </script>
 </body>
